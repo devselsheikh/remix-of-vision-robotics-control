@@ -10,6 +10,21 @@ export interface ConnectionResponse {
   message?: string;
 }
 
+export interface Detection {
+  name: string;
+  raw_name: string;
+  conf: number;
+  box: number[];
+  severity: string;
+  ppe_status?: string;
+}
+
+export interface DetectionsResponse {
+  timestamp: number;
+  count: number;
+  detections: Detection[];
+}
+
 // Backend runs on localhost:8000
 const BACKEND_URL = 'http://localhost:8000';
 
@@ -36,6 +51,20 @@ export const api = {
       return Math.round(performance.now() - start);
     } catch {
       return -1;
+    }
+  },
+
+  async getDetections(): Promise<DetectionsResponse> {
+    const response = await fetch(`${BACKEND_URL}/detections`);
+    return response.json();
+  },
+
+  async testPiConnection(): Promise<{ status: string; message?: string }> {
+    try {
+      const response = await fetch(`${BACKEND_URL}/pi/test`);
+      return response.json();
+    } catch {
+      return { status: 'error', message: 'Backend not reachable' };
     }
   },
 
