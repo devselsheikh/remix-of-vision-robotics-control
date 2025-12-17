@@ -1,17 +1,19 @@
 import { useState } from 'react';
 import { VideoFeed } from '@/components/VideoFeed';
 import { SettingsModal } from '@/components/SettingsModal';
+import { HelpModal } from '@/components/HelpModal';
 import { MotorControls } from '@/components/MotorControls';
 import { DetectionLog } from '@/components/DetectionLog';
 import { AnalyticsPanel } from '@/components/AnalyticsPanel';
 import { Button } from '@/components/ui/button';
 import { loadSettings, ConnectionConfig } from '@/lib/api';
-import { Settings, Bot, Wifi, WifiOff } from 'lucide-react';
+import { Settings, Bot, Wifi, WifiOff, HelpCircle } from 'lucide-react';
 
 const Index = () => {
   const [config, setConfig] = useState<ConnectionConfig>(loadSettings);
   const [isConnected, setIsConnected] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const handleConnect = () => {
     setIsConnected(true);
@@ -48,6 +50,16 @@ const Index = () => {
                 {isConnected ? 'CONNECTED' : 'DISCONNECTED'}
               </span>
             </div>
+            
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => setHelpOpen(true)}
+              className="gap-2"
+            >
+              <HelpCircle className="w-4 h-4" />
+              Help
+            </Button>
             
             <Button 
               variant="outline" 
@@ -88,6 +100,9 @@ const Index = () => {
         onConnect={handleConnect}
         isConnected={isConnected}
       />
+      
+      {/* Help Modal */}
+      <HelpModal open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
   );
 };
