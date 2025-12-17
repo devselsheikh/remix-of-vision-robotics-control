@@ -1,12 +1,93 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState } from 'react';
+import { VideoFeed } from '@/components/VideoFeed';
+import { SettingsModal } from '@/components/SettingsModal';
+import { MotorControls } from '@/components/MotorControls';
+import { DetectionLog } from '@/components/DetectionLog';
+import { AnalyticsPanel } from '@/components/AnalyticsPanel';
+import { Button } from '@/components/ui/button';
+import { loadSettings, ConnectionConfig } from '@/lib/api';
+import { Settings, Cpu, Wifi, WifiOff } from 'lucide-react';
 
 const Index = () => {
+  const [config, setConfig] = useState<ConnectionConfig>(loadSettings);
+  const [isConnected, setIsConnected] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const handleConnect = () => {
+    setIsConnected(true);
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
+    <div className="min-h-screen bg-background bg-grid">
+      {/* Header */}
+      <header className="border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-50">
+        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center">
+              <Cpu className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold font-mono tracking-tight">YOLO ROBOTICS</h1>
+              <p className="text-xs text-muted-foreground font-mono">Control Dashboard v1.0</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            {/* Connection Status */}
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${
+              isConnected 
+                ? 'bg-success/10 border-success/30 text-success' 
+                : 'bg-destructive/10 border-destructive/30 text-destructive'
+            }`}>
+              {isConnected ? (
+                <Wifi className="w-4 h-4" />
+              ) : (
+                <WifiOff className="w-4 h-4" />
+              )}
+              <span className="text-xs font-mono font-semibold">
+                {isConnected ? 'CONNECTED TO BACKEND' : 'DISCONNECTED'}
+              </span>
+            </div>
+            
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => setSettingsOpen(true)}
+              className="gap-2"
+            >
+              <Settings className="w-4 h-4" />
+              Settings
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="container mx-auto px-4 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column - Video Feed */}
+          <div className="lg:col-span-2 space-y-6">
+            <VideoFeed backendIp={config.backendIp} isConnected={isConnected} />
+            <AnalyticsPanel />
+          </div>
+          
+          {/* Right Column - Controls */}
+          <div className="space-y-6">
+            <MotorControls backendIp={config.backendIp} isConnected={isConnected} />
+            <DetectionLog isConnected={isConnected} />
+          </div>
+        </div>
+      </main>
+
+      {/* Settings Modal */}
+      <SettingsModal
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        config={config}
+        onConfigChange={setConfig}
+        onConnect={handleConnect}
+        isConnected={isConnected}
+      />
     </div>
   );
 };
