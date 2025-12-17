@@ -1,22 +1,38 @@
-# DOBI Detection Backend
+# DOBI - Detection & Motor Control Backend
+# FastAPI server with MJPEG streaming and YOLOv8 detection
 # Run with: python main.py
 
-import sys
 import cv2
 import numpy as np
 from ultralytics import YOLO
-from PyQt6.QtWidgets import (
-    QApplication, QLabel, QWidget, QVBoxLayout, QTextEdit, QSizePolicy,
-    QPushButton, QGridLayout, QGroupBox
-)
-from PyQt6.QtGui import QImage, QPixmap
-from PyQt6.QtCore import QTimer, Qt
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel
 from threading import Thread, Lock
 import requests
+import time
+import uvicorn
+
+app = FastAPI(title="DOBI Backend", version="1.0.0")
+
+# Enable CORS for frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class ConnectionConfig(BaseModel):
+    stream_url: str
+    pi_ip: str
 
 
 class DetectionEngine:
-    IOU_THRESHOLD = 0.05  # PPE overlap threshold
+    IOU_THRESHOLD = 0.05
 
     def __init__(self, model_path: str, device='cpu'):
         print(f"Loading YOLO model from {model_path} on device: {device} ...")
@@ -70,7 +86,7 @@ class DetectionEngine:
                 "name": display_name,
                 "raw_name": name,
                 "conf": conf,
-                "box": (x1, y1, x2, y2),
+                "box": [x1, y1, x2, y2],
                 "severity": "NONE"
             }
             detections.append(detection)
@@ -94,17 +110,13 @@ class DetectionEngine:
             else:
                 person["ppe_status"] = "UNSAFE"
 
-            x1, y1, _, _ = person["box"]
-            cv2.putText(annotated_frame, f"Overlaps: {overlaps}",
-                        (x1, y1 - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
-
         for det in detections:
             x1, y1, x2, y2 = det["box"]
             label = f"{det['name']} {det['conf']:.2f}"
 
             if det.get("raw_name") == "person":
-                label += f" ({det['ppe_status']})"
-                color = (0, 255, 0) if det["ppe_status"] in ["SAFE", "FULLY_PROTECTED"] else (0, 0, 255)
+                label += f" ({det.get('ppe_status', 'UNKNOWN')})"
+                color = (0, 255, 0) if det.get("ppe_status") in ["SAFE", "FULLY_PROTECTED"] else (0, 0, 255)
             else:
                 color = (0, 0, 255) if det["severity"] != "NONE" else (0, 255, 0)
 
@@ -131,151 +143,193 @@ class DetectionEngine:
         return inter / float(boxA_area + boxB_area - inter + 1e-6)
 
 
-class DetectionApp(QWidget):
-    def __init__(self, model_path, stream_url, pi_ip, device='cpu'):
-        super().__init__()
-        self.setWindowTitle("DOBI Detection UI + Web Motor Control")
-        self.resize(1280, 720)
+# Global state
+class AppState:
+    def __init__(self):
+        self.detection_engine = None
+        self.cap = None
+        self.stream_url = None
+        self.pi_ip = None
+        self.frame = None
+        self.detections = []
+        self.lock = Lock()
+        self.running = False
+        self.thread = None
 
-        self.detection_engine = DetectionEngine(model_path, device)
+    def connect(self, stream_url: str, pi_ip: str, model_path: str = "best.pt", device: str = "cpu"):
+        self.stop()
+        
         self.stream_url = stream_url
         self.pi_ip = pi_ip
-
-        self.video_label = QLabel()
-        self.video_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.video_label.setMinimumSize(640, 360)
-
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.log_text.setFixedHeight(120)
-
-        self.control_group = QGroupBox("Motor Control (via Pi Web Server)")
-        self.control_layout = QGridLayout()
-
-        self.commands = {
-            "Forward": "/move/forward",
-            "Backward": "/move/backward",
-            "Left": "/move/left",
-            "Right": "/move/right",
-            "Stop": "/move/stop"
-        }
-
-        row, col = 0, 0
-        for label, endpoint in self.commands.items():
-            btn = QPushButton(label)
-            btn.clicked.connect(lambda _, ep=endpoint: self.send_motor_command(ep))
-            self.control_layout.addWidget(btn, row, col)
-            col += 1
-            if col > 2:
-                col = 0
-                row += 1
-        self.control_group.setLayout(self.control_layout)
-
-        main_layout = QVBoxLayout()
-        main_layout.addWidget(self.video_label)
-        main_layout.addWidget(self.log_text)
-        main_layout.addWidget(self.control_group)
-        self.setLayout(main_layout)
-
-        self.cap = cv2.VideoCapture(self.stream_url)
+        
+        if self.detection_engine is None:
+            self.detection_engine = DetectionEngine(model_path, device)
+        
+        self.cap = cv2.VideoCapture(stream_url)
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-        self.frame = None
-        self.lock = Lock()
+        
+        if not self.cap.isOpened():
+            raise Exception(f"Failed to open video stream: {stream_url}")
+        
         self.running = True
-
-        self.thread = Thread(target=self.grab_frames, daemon=True)
+        self.thread = Thread(target=self._capture_loop, daemon=True)
         self.thread.start()
+        
+        return True
 
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_frame)
-        self.timer.start(30)
-
-        self.last_annotated = None
-        self.last_detections = []
-
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-
-    def grab_frames(self):
+    def _capture_loop(self):
         while self.running:
+            if self.cap is None:
+                break
             ret, frame = self.cap.read()
             if not ret:
+                time.sleep(0.01)
                 continue
+            
+            detections, annotated = self.detection_engine.process_frame(frame)
+            
             with self.lock:
-                self.frame = frame
+                self.frame = annotated
+                self.detections = detections
 
-    def update_frame(self):
+    def get_frame(self):
         with self.lock:
             if self.frame is None:
-                return
-            frame = self.frame.copy()
+                return None
+            return self.frame.copy()
 
-        detections, annotated = self.detection_engine.process_frame(frame)
-        self.last_annotated = annotated
-        self.last_detections = detections
+    def get_detections(self):
+        with self.lock:
+            return self.detections.copy()
 
-        self.display_image(annotated)
-        self.update_log(detections)
-
-    def display_image(self, cv_img):
-        rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
-        h, w, ch = rgb_image.shape
-        bytes_per_line = ch * w
-        qt_image = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
-        pixmap = QPixmap.fromImage(qt_image).scaled(
-            self.video_label.width(),
-            self.video_label.height(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation
-        )
-        self.video_label.setPixmap(pixmap)
-
-    def update_log(self, detections):
-        self.log_text.clear()
-        for det in detections:
-            self.log_text.append(f"{det['name']} ({det['conf']:.2f}) Severity: {det['severity']}")
-
-    def send_motor_command(self, endpoint):
-        url = f"http://{self.pi_ip}:5000{endpoint}"
-        try:
-            response = requests.get(url, timeout=1)
-            if response.status_code == 200:
-                self.log_text.append(f"Motor command sent: {endpoint.split('/')[-1].capitalize()}")
-            else:
-                self.log_text.append(f"Error sending motor command: {response.status_code}")
-        except Exception as e:
-            self.log_text.append(f"Exception sending motor command: {e}")
-
-    def keyPressEvent(self, event):
-        key = event.key()
-        if key == Qt.Key.Key_W:
-            self.send_motor_command("/move/forward")
-        elif key == Qt.Key.Key_S:
-            self.send_motor_command("/move/backward")
-        elif key == Qt.Key.Key_A:
-            self.send_motor_command("/move/left")
-        elif key == Qt.Key.Key_D:
-            self.send_motor_command("/move/right")
-        elif key == Qt.Key.Key_Space:
-            self.send_motor_command("/move/stop")
-
-    def closeEvent(self, event):
+    def stop(self):
         self.running = False
-        self.thread.join()
-        self.cap.release()
-        event.accept()
+        if self.thread:
+            self.thread.join(timeout=2)
+            self.thread = None
+        if self.cap:
+            self.cap.release()
+            self.cap = None
+
+
+state = AppState()
+
+
+# API Endpoints
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok", "connected": state.running}
+
+
+@app.post("/connect")
+async def connect(config: ConnectionConfig):
+    try:
+        state.connect(config.stream_url, config.pi_ip)
+        return {"status": "connected"}
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
+
+
+@app.get("/disconnect")
+async def disconnect():
+    state.stop()
+    return {"status": "disconnected"}
+
+
+@app.get("/detections")
+async def get_detections():
+    detections = state.get_detections()
+    return {
+        "timestamp": time.time(),
+        "count": len(detections),
+        "detections": detections
+    }
+
+
+def generate_mjpeg():
+    while True:
+        frame = state.get_frame()
+        if frame is None:
+            placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+            cv2.putText(placeholder, "No Video Signal", (180, 240),
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (100, 100, 100), 2)
+            frame = placeholder
+        
+        _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+        time.sleep(0.033)
+
+
+@app.get("/video")
+async def video_feed():
+    return StreamingResponse(
+        generate_mjpeg(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+@app.post("/move/{direction}")
+async def move(direction: str):
+    if state.pi_ip is None:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Not connected to Pi"}
+        )
+    
+    valid_directions = ["forward", "backward", "left", "right", "stop"]
+    if direction not in valid_directions:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": f"Invalid direction: {direction}"}
+        )
+    
+    try:
+        url = f"http://{state.pi_ip}:5000/move/{direction}"
+        response = requests.get(url, timeout=1)
+        if response.status_code == 200:
+            return {"status": "ok", "direction": direction}
+        else:
+            return JSONResponse(
+                status_code=response.status_code,
+                content={"status": "error", "message": "Pi returned error"}
+            )
+    except requests.exceptions.Timeout:
+        return JSONResponse(
+            status_code=504,
+            content={"status": "error", "message": "Pi connection timeout"}
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
+
+
+@app.get("/pi/test")
+async def test_pi_connection():
+    if state.pi_ip is None:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Pi IP not configured"}
+        )
+    
+    try:
+        url = f"http://{state.pi_ip}:5000/health"
+        requests.get(url, timeout=2)
+        return {"status": "ok", "pi_ip": state.pi_ip}
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
 
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-
-    MODEL_PATH = "best.pt"
-    STREAM_URL = "http://10.40.58.225:8080/?action=stream"
-    PI_IP = "10.40.58.225"
-
-    device = 'cpu'
-
-    window = DetectionApp(MODEL_PATH, STREAM_URL, PI_IP, device=device)
-    window.show()
-    sys.exit(app.exec())
+    print("Starting DOBI Backend Server...")
+    print("API Docs: http://localhost:8000/docs")
+    uvicorn.run(app, host="0.0.0.0", port=8000)
