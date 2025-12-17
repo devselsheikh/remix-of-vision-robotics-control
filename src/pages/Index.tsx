@@ -6,7 +6,7 @@ import { DetectionLog } from '@/components/DetectionLog';
 import { AnalyticsPanel } from '@/components/AnalyticsPanel';
 import { Button } from '@/components/ui/button';
 import { loadSettings, ConnectionConfig } from '@/lib/api';
-import { Settings, Cpu, Wifi, WifiOff } from 'lucide-react';
+import { Settings, Bot, Wifi, WifiOff } from 'lucide-react';
 
 const Index = () => {
   const [config, setConfig] = useState<ConnectionConfig>(loadSettings);
@@ -24,11 +24,11 @@ const Index = () => {
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center">
-              <Cpu className="w-5 h-5 text-primary" />
+              <Bot className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-lg font-bold font-mono tracking-tight">YOLO ROBOTICS</h1>
-              <p className="text-xs text-muted-foreground font-mono">Control Dashboard v1.0</p>
+              <h1 className="text-lg font-bold font-mono tracking-tight">DOBI</h1>
+              <p className="text-xs text-muted-foreground font-mono">Detection & Control Dashboard v1.0</p>
             </div>
           </div>
           
@@ -45,7 +45,7 @@ const Index = () => {
                 <WifiOff className="w-4 h-4" />
               )}
               <span className="text-xs font-mono font-semibold">
-                {isConnected ? 'CONNECTED TO BACKEND' : 'DISCONNECTED'}
+                {isConnected ? 'CONNECTED' : 'DISCONNECTED'}
               </span>
             </div>
             
@@ -67,13 +67,13 @@ const Index = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Video Feed */}
           <div className="lg:col-span-2 space-y-6">
-            <VideoFeed backendIp={config.backendIp} isConnected={isConnected} />
+            <VideoFeed isConnected={isConnected} />
             <AnalyticsPanel />
           </div>
           
           {/* Right Column - Controls */}
           <div className="space-y-6">
-            <MotorControls backendIp={config.backendIp} isConnected={isConnected} />
+            <MotorControls isConnected={isConnected} />
             <DetectionLog isConnected={isConnected} />
           </div>
         </div>

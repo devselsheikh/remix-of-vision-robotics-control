@@ -4,13 +4,12 @@ import { api } from '@/lib/api';
 import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Square } from 'lucide-react';
 
 interface MotorControlsProps {
-  backendIp: string;
   isConnected: boolean;
 }
 
 type Direction = 'forward' | 'backward' | 'left' | 'right' | 'stop';
 
-export const MotorControls = ({ backendIp, isConnected }: MotorControlsProps) => {
+export const MotorControls = ({ isConnected }: MotorControlsProps) => {
   const lastCommandRef = useRef<string>('');
   const throttleRef = useRef<boolean>(false);
 
@@ -22,7 +21,7 @@ export const MotorControls = ({ backendIp, isConnected }: MotorControlsProps) =>
     lastCommandRef.current = direction;
     
     try {
-      await api.moveMotor(backendIp, direction);
+      await api.moveMotor(direction);
     } catch (error) {
       console.error('Motor command failed:', error);
     }
@@ -30,7 +29,7 @@ export const MotorControls = ({ backendIp, isConnected }: MotorControlsProps) =>
     setTimeout(() => {
       throttleRef.current = false;
     }, 100); // 100ms throttle
-  }, [backendIp, isConnected]);
+  }, [isConnected]);
 
   useEffect(() => {
     const keyMap: Record<string, Direction> = {

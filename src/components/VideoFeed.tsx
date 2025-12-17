@@ -3,11 +3,10 @@ import { api } from '@/lib/api';
 import { Wifi, WifiOff, Activity } from 'lucide-react';
 
 interface VideoFeedProps {
-  backendIp: string;
   isConnected: boolean;
 }
 
-export const VideoFeed = ({ backendIp, isConnected }: VideoFeedProps) => {
+export const VideoFeed = ({ isConnected }: VideoFeedProps) => {
   const [latency, setLatency] = useState<number>(-1);
   const [imageError, setImageError] = useState(false);
 
@@ -18,12 +17,12 @@ export const VideoFeed = ({ backendIp, isConnected }: VideoFeedProps) => {
     }
 
     const pingInterval = setInterval(async () => {
-      const ping = await api.ping(backendIp);
+      const ping = await api.ping();
       setLatency(ping);
     }, 2000);
 
     return () => clearInterval(pingInterval);
-  }, [backendIp, isConnected]);
+  }, [isConnected]);
 
   const getLatencyColor = () => {
     if (latency < 0) return 'text-destructive';
@@ -64,8 +63,8 @@ export const VideoFeed = ({ backendIp, isConnected }: VideoFeedProps) => {
       <div className="relative aspect-video bg-background flex items-center justify-center">
         {isConnected && !imageError ? (
           <img
-            src={api.getVideoStreamUrl(backendIp)}
-            alt="YOLO Detection Stream"
+            src={api.getVideoStreamUrl()}
+            alt="DOBI Detection Stream"
             className="w-full h-full object-contain"
             onError={() => setImageError(true)}
           />
