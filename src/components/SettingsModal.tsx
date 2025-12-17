@@ -71,19 +71,6 @@ export const SettingsModal = ({
         
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="backendIp" className="font-mono text-xs">
-              BACKEND IP ADDRESS
-            </Label>
-            <Input
-              id="backendIp"
-              value={localConfig.backendIp}
-              onChange={(e) => setLocalConfig({ ...localConfig, backendIp: e.target.value })}
-              placeholder="192.168.1.50"
-              className="font-mono"
-            />
-          </div>
-          
-          <div className="space-y-2">
             <Label htmlFor="streamUrl" className="font-mono text-xs">
               VIDEO STREAM URL
             </Label>
