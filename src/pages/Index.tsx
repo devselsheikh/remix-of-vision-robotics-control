@@ -68,7 +68,7 @@ const Index = () => {
           {/* Left Column - Video Feed */}
           <div className="lg:col-span-2 space-y-6">
             <VideoFeed isConnected={isConnected} />
-            <AnalyticsPanel />
+            <AnalyticsPanel isConnected={isConnected} />
           </div>
           
           {/* Right Column - Controls */}
