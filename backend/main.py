@@ -110,6 +110,11 @@ class DetectionEngine:
             else:
                 person["ppe_status"] = "UNSAFE"
 
+            # Draw overlap count on frame like the original
+            x1, y1, _, _ = person["box"]
+            cv2.putText(annotated_frame, f"Overlaps: {overlaps}",
+                        (x1, y1 - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+
         for det in detections:
             x1, y1, x2, y2 = det["box"]
             label = f"{det['name']} {det['conf']:.2f}"
@@ -151,52 +156,102 @@ class AppState:
         self.stream_url = None
         self.pi_ip = None
         self.frame = None
+        self.annotated_frame = None
         self.detections = []
         self.lock = Lock()
         self.running = False
         self.thread = None
+        self.last_error = None
+        self.frame_count = 0
 
     def connect(self, stream_url: str, pi_ip: str, model_path: str = "best.pt", device: str = "cpu"):
         self.stop()
+        self.last_error = None
         
         self.stream_url = stream_url
         self.pi_ip = pi_ip
         
+        # Load model if not loaded
         if self.detection_engine is None:
-            self.detection_engine = DetectionEngine(model_path, device)
+            try:
+                self.detection_engine = DetectionEngine(model_path, device)
+            except Exception as e:
+                self.last_error = f"Failed to load YOLO model: {e}"
+                raise Exception(self.last_error)
         
+        # Open video capture with same settings as working PyQt app
+        print(f"Opening video stream: {stream_url}")
         self.cap = cv2.VideoCapture(stream_url)
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         
+        # Wait a bit and check if stream opened
+        time.sleep(0.5)
+        
         if not self.cap.isOpened():
-            raise Exception(f"Failed to open video stream: {stream_url}")
+            self.last_error = f"Failed to open video stream: {stream_url}"
+            raise Exception(self.last_error)
+        
+        # Try to read a test frame
+        ret, test_frame = self.cap.read()
+        if not ret or test_frame is None:
+            self.cap.release()
+            self.cap = None
+            self.last_error = f"Stream opened but cannot read frames from: {stream_url}"
+            raise Exception(self.last_error)
+        
+        print(f"Stream connected! Frame size: {test_frame.shape}")
         
         self.running = True
+        self.frame_count = 0
         self.thread = Thread(target=self._capture_loop, daemon=True)
         self.thread.start()
         
         return True
 
     def _capture_loop(self):
+        """Capture and process frames - matches PyQt implementation"""
+        consecutive_failures = 0
+        max_failures = 30  # Allow some failures before stopping
+        
         while self.running:
             if self.cap is None:
                 break
+                
             ret, frame = self.cap.read()
-            if not ret:
+            
+            if not ret or frame is None:
+                consecutive_failures += 1
+                if consecutive_failures > max_failures:
+                    print(f"Too many consecutive frame read failures ({consecutive_failures}), stopping...")
+                    self.last_error = "Lost connection to video stream"
+                    self.running = False
+                    break
                 time.sleep(0.01)
                 continue
             
-            detections, annotated = self.detection_engine.process_frame(frame)
+            consecutive_failures = 0
+            self.frame_count += 1
             
-            with self.lock:
-                self.frame = annotated
-                self.detections = detections
+            # Process frame with detection engine
+            try:
+                detections, annotated = self.detection_engine.process_frame(frame)
+                
+                with self.lock:
+                    self.frame = frame
+                    self.annotated_frame = annotated
+                    self.detections = detections
+            except Exception as e:
+                print(f"Error processing frame: {e}")
+                with self.lock:
+                    self.frame = frame
+                    self.annotated_frame = frame
+                    self.detections = []
 
     def get_frame(self):
         with self.lock:
-            if self.frame is None:
+            if self.annotated_frame is None:
                 return None
-            return self.frame.copy()
+            return self.annotated_frame.copy()
 
     def get_detections(self):
         with self.lock:
@@ -210,6 +265,9 @@ class AppState:
         if self.cap:
             self.cap.release()
             self.cap = None
+        self.frame = None
+        self.annotated_frame = None
+        self.detections = []
 
 
 state = AppState()
@@ -219,15 +277,23 @@ state = AppState()
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "connected": state.running}
+    return {
+        "status": "ok", 
+        "connected": state.running,
+        "stream_url": state.stream_url,
+        "pi_ip": state.pi_ip,
+        "frame_count": state.frame_count,
+        "last_error": state.last_error
+    }
 
 
 @app.post("/connect")
 async def connect(config: ConnectionConfig):
     try:
         state.connect(config.stream_url, config.pi_ip)
-        return {"status": "connected"}
+        return {"status": "connected", "message": "Successfully connected to stream"}
     except Exception as e:
+        print(f"Connection error: {e}")
         return JSONResponse(
             status_code=500,
             content={"status": "error", "message": str(e)}
@@ -246,23 +312,29 @@ async def get_detections():
     return {
         "timestamp": time.time(),
         "count": len(detections),
-        "detections": detections
+        "detections": detections,
+        "connected": state.running
     }
 
 
 def generate_mjpeg():
+    """Generate MJPEG stream - matches timing from PyQt app (30fps = ~33ms)"""
     while True:
         frame = state.get_frame()
         if frame is None:
+            # Create placeholder frame
             placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
             cv2.putText(placeholder, "No Video Signal", (180, 240),
                        cv2.FONT_HERSHEY_SIMPLEX, 1, (100, 100, 100), 2)
+            if state.last_error:
+                cv2.putText(placeholder, state.last_error[:50], (50, 280),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (100, 100, 100), 1)
             frame = placeholder
         
         _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
-        time.sleep(0.033)
+        time.sleep(0.030)  # ~30fps like PyQt timer
 
 
 @app.get("/video")
@@ -289,6 +361,7 @@ async def move(direction: str):
         )
     
     try:
+        # Use port 5000 like the original PyQt app
         url = f"http://{state.pi_ip}:5000/move/{direction}"
         response = requests.get(url, timeout=1)
         if response.status_code == 200:
@@ -329,7 +402,27 @@ async def test_pi_connection():
         )
 
 
+@app.get("/status")
+async def get_status():
+    """Get detailed status for debugging"""
+    return {
+        "running": state.running,
+        "stream_url": state.stream_url,
+        "pi_ip": state.pi_ip,
+        "frame_count": state.frame_count,
+        "has_frame": state.annotated_frame is not None,
+        "detection_count": len(state.detections),
+        "last_error": state.last_error,
+        "model_loaded": state.detection_engine is not None
+    }
+
+
 if __name__ == "__main__":
-    print("Starting DOBI Backend Server...")
+    print("=" * 50)
+    print("DOBI Backend Server")
+    print("=" * 50)
     print("API Docs: http://localhost:8000/docs")
+    print("Video Stream: http://localhost:8000/video")
+    print("Status: http://localhost:8000/status")
+    print("=" * 50)
     uvicorn.run(app, host="0.0.0.0", port=8000)

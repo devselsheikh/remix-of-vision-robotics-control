@@ -13,8 +13,12 @@ export const VideoFeed = ({ isConnected }: VideoFeedProps) => {
   useEffect(() => {
     if (!isConnected) {
       setLatency(-1);
+      setImageError(false);
       return;
     }
+
+    // Reset image error when connecting
+    setImageError(false);
 
     const pingInterval = setInterval(async () => {
       const ping = await api.ping();
