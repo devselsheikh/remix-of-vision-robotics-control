@@ -26,6 +26,7 @@ export const SettingsModal = ({
   const [localConfig, setLocalConfig] = useState(config);
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   useEffect(() => {
     setLocalConfig(config);
@@ -34,6 +35,7 @@ export const SettingsModal = ({
   const handleConnect = async () => {
     setIsConnecting(true);
     setConnectionStatus('idle');
+    setErrorMessage('');
     
     try {
       const response = await api.connect(localConfig);
@@ -45,9 +47,11 @@ export const SettingsModal = ({
         setTimeout(() => onOpenChange(false), 1000);
       } else {
         setConnectionStatus('error');
+        setErrorMessage(response.message || 'Connection failed');
       }
-    } catch {
+    } catch (error) {
       setConnectionStatus('error');
+      setErrorMessage(error instanceof Error ? error.message : 'Unknown error');
     } finally {
       setIsConnecting(false);
     }
@@ -97,19 +101,24 @@ export const SettingsModal = ({
           </div>
 
           {connectionStatus !== 'idle' && (
-            <div className={`flex items-center gap-2 p-3 rounded-md ${
+            <div className={`flex flex-col gap-1 p-3 rounded-md ${
               connectionStatus === 'success' 
                 ? 'bg-success/10 text-success border border-success/20' 
                 : 'bg-destructive/10 text-destructive border border-destructive/20'
             }`}>
-              {connectionStatus === 'success' ? (
-                <CheckCircle2 className="w-4 h-4" />
-              ) : (
-                <XCircle className="w-4 h-4" />
+              <div className="flex items-center gap-2">
+                {connectionStatus === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4" />
+                ) : (
+                  <XCircle className="w-4 h-4" />
+                )}
+                <span className="font-mono text-sm">
+                  {connectionStatus === 'success' ? 'Connected successfully!' : 'Connection failed'}
+                </span>
+              </div>
+              {errorMessage && (
+                <p className="font-mono text-xs ml-6 opacity-80">{errorMessage}</p>
               )}
-              <span className="font-mono text-sm">
-                {connectionStatus === 'success' ? 'Connected successfully!' : 'Connection failed'}
-              </span>
             </div>
           )}
 

@@ -23,6 +23,16 @@ export interface DetectionsResponse {
   timestamp: number;
   count: number;
   detections: Detection[];
+  connected?: boolean;
+}
+
+export interface HealthResponse {
+  status: string;
+  connected: boolean;
+  stream_url?: string;
+  pi_ip?: string;
+  frame_count?: number;
+  last_error?: string;
 }
 
 // Backend runs on localhost:8000
@@ -30,15 +40,37 @@ const BACKEND_URL = 'http://localhost:8000';
 
 export const api = {
   async connect(config: ConnectionConfig): Promise<ConnectionResponse> {
-    const response = await fetch(`${BACKEND_URL}/connect`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        stream_url: config.streamUrl,
-        pi_ip: config.piIp,
-      }),
-    });
-    return response.json();
+    try {
+      const response = await fetch(`${BACKEND_URL}/connect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stream_url: config.streamUrl,
+          pi_ip: config.piIp,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        return { status: 'error', message: data.message || 'Connection failed' };
+      }
+      
+      return { status: 'connected', message: data.message };
+    } catch (error) {
+      return { 
+        status: 'error', 
+        message: error instanceof Error ? error.message : 'Backend not reachable. Is the server running?'
+      };
+    }
+  },
+
+  async disconnect(): Promise<void> {
+    try {
+      await fetch(`${BACKEND_URL}/disconnect`);
+    } catch {
+      // Ignore disconnect errors
+    }
   },
 
   async ping(): Promise<number> {
@@ -51,6 +83,15 @@ export const api = {
       return Math.round(performance.now() - start);
     } catch {
       return -1;
+    }
+  },
+
+  async getHealth(): Promise<HealthResponse | null> {
+    try {
+      const response = await fetch(`${BACKEND_URL}/health`);
+      return response.json();
+    } catch {
+      return null;
     }
   },
 
