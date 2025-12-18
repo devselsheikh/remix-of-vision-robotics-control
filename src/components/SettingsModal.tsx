@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Settings, Loader2, CheckCircle2, XCircle } from 'lucide-react';
-import { api, ConnectionConfig, saveSettings } from '@/lib/api';
+import { api, ConnectionConfig, saveSettings, setBackendUrl } from '@/lib/api';
 
 interface SettingsModalProps {
   open: boolean;
@@ -37,6 +37,9 @@ export const SettingsModal = ({
     setConnectionStatus('idle');
     setErrorMessage('');
     
+    // Update backend URL before connecting
+    setBackendUrl(localConfig.backendUrl);
+    
     try {
       const response = await api.connect(localConfig);
       if (response.status === 'connected') {
@@ -58,6 +61,7 @@ export const SettingsModal = ({
   };
 
   const handleSave = () => {
+    setBackendUrl(localConfig.backendUrl);
     saveSettings(localConfig);
     onConfigChange(localConfig);
     onOpenChange(false);
@@ -75,14 +79,30 @@ export const SettingsModal = ({
         
         <div className="space-y-4 py-4">
           <div className="space-y-2">
+            <Label htmlFor="backendUrl" className="font-mono text-xs">
+              BACKEND URL (your computer)
+            </Label>
+            <Input
+              id="backendUrl"
+              value={localConfig.backendUrl}
+              onChange={(e) => setLocalConfig({ ...localConfig, backendUrl: e.target.value })}
+              placeholder="http://localhost:8000"
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              The Python backend running YOLO detection
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="streamUrl" className="font-mono text-xs">
-              VIDEO STREAM URL
+              VIDEO STREAM URL (Pi camera)
             </Label>
             <Input
               id="streamUrl"
               value={localConfig.streamUrl}
               onChange={(e) => setLocalConfig({ ...localConfig, streamUrl: e.target.value })}
-              placeholder="http://camera-ip:8080/?action=stream"
+              placeholder="http://10.40.58.225:8080/?action=stream"
               className="font-mono text-sm"
             />
           </div>
@@ -95,7 +115,7 @@ export const SettingsModal = ({
               id="piIp"
               value={localConfig.piIp}
               onChange={(e) => setLocalConfig({ ...localConfig, piIp: e.target.value })}
-              placeholder="10.40.0.1"
+              placeholder="10.40.58.225"
               className="font-mono"
             />
           </div>
@@ -118,6 +138,11 @@ export const SettingsModal = ({
               </div>
               {errorMessage && (
                 <p className="font-mono text-xs ml-6 opacity-80">{errorMessage}</p>
+              )}
+              {connectionStatus === 'error' && errorMessage?.includes('Backend not reachable') && (
+                <p className="font-mono text-xs ml-6 mt-1 text-muted-foreground">
+                  Make sure the Python backend is running: <code className="bg-muted px-1 rounded">python backend/main.py</code>
+                </p>
               )}
             </div>
           )}

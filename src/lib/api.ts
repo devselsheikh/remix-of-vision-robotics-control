@@ -3,6 +3,7 @@
 export interface ConnectionConfig {
   streamUrl: string;
   piIp: string;
+  backendUrl: string;
 }
 
 export interface ConnectionResponse {
@@ -35,8 +36,14 @@ export interface HealthResponse {
   last_error?: string;
 }
 
-// Backend runs on localhost:8000
-const BACKEND_URL = 'http://localhost:8000';
+// Backend URL - can be configured
+let BACKEND_URL = 'http://localhost:8000';
+
+export const setBackendUrl = (url: string) => {
+  BACKEND_URL = url.replace(/\/$/, ''); // Remove trailing slash
+};
+
+export const getBackendUrl = () => BACKEND_URL;
 
 export const api = {
   async connect(config: ConnectionConfig): Promise<ConnectionResponse> {
@@ -123,11 +130,20 @@ export const api = {
 export const loadSettings = (): ConnectionConfig => {
   const saved = localStorage.getItem('dobi-settings');
   if (saved) {
-    return JSON.parse(saved);
+    const parsed = JSON.parse(saved);
+    if (parsed.backendUrl) {
+      setBackendUrl(parsed.backendUrl);
+    }
+    return {
+      streamUrl: parsed.streamUrl || 'http://10.40.58.225:8080/?action=stream',
+      piIp: parsed.piIp || '10.40.58.225',
+      backendUrl: parsed.backendUrl || 'http://localhost:8000',
+    };
   }
   return {
     streamUrl: 'http://10.40.58.225:8080/?action=stream',
     piIp: '10.40.58.225',
+    backendUrl: 'http://localhost:8000',
   };
 };
 

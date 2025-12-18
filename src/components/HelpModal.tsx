@@ -39,6 +39,16 @@ export const HelpModal = ({ open, onOpenChange }: HelpModalProps) => {
           
           <ScrollArea className="h-[400px] mt-4">
             <TabsContent value="install" className="space-y-4 pr-4">
+              <section className="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
+                <h3 className="font-mono font-semibold text-sm mb-2 text-destructive">
+                  ⚠️ Important: Local Backend Required
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  This UI connects to a <strong>Python backend running on your computer</strong> (localhost:8000). 
+                  The backend processes video with YOLO and streams it to this interface.
+                </p>
+              </section>
+
               <section>
                 <h3 className="font-mono font-semibold text-sm mb-2 flex items-center gap-2">
                   <Cpu className="w-4 h-4 text-primary" />
@@ -47,12 +57,25 @@ export const HelpModal = ({ open, onOpenChange }: HelpModalProps) => {
                 <ul className="text-sm text-muted-foreground space-y-1 ml-6 list-disc">
                   <li>Python 3.10+</li>
                   <li>CUDA (optional, for GPU acceleration)</li>
-                  <li>Raspberry Pi with camera module (for live feed)</li>
+                  <li>Raspberry Pi with camera module</li>
+                  <li>MJPG-Streamer on Pi</li>
                 </ul>
               </section>
               
               <section>
-                <h3 className="font-mono font-semibold text-sm mb-2">1. Backend Setup</h3>
+                <h3 className="font-mono font-semibold text-sm mb-2">1. Raspberry Pi - Start Camera Stream</h3>
+                <div className="bg-muted rounded-lg p-3 font-mono text-xs space-y-1">
+                  <p className="text-muted-foreground"># Navigate to mjpg-streamer folder</p>
+                  <p>cd mjpg-streamer/mjpg-streamer-experimental</p>
+                  <p className="text-muted-foreground mt-2"># Start the stream (USB camera)</p>
+                  <p>./mjpg_streamer -i "./input_uvc.so -d /dev/video0 -r 640x480 -f 15" -o "./output_http.so -w ./www"</p>
+                  <p className="text-muted-foreground mt-2"># Stream URL will be:</p>
+                  <p className="text-primary">http://&lt;PI_IP&gt;:8080/?action=stream</p>
+                </div>
+              </section>
+              
+              <section>
+                <h3 className="font-mono font-semibold text-sm mb-2">2. Your Computer - Start Backend</h3>
                 <div className="bg-muted rounded-lg p-3 font-mono text-xs space-y-1">
                   <p className="text-muted-foreground"># Navigate to backend folder</p>
                   <p>cd backend</p>
@@ -62,24 +85,18 @@ export const HelpModal = ({ open, onOpenChange }: HelpModalProps) => {
                   <p>cp your_model.pt best.pt</p>
                   <p className="text-muted-foreground mt-2"># Start the server</p>
                   <p>python main.py</p>
+                  <p className="text-muted-foreground mt-2"># Server runs on:</p>
+                  <p className="text-primary">http://localhost:8000</p>
                 </div>
               </section>
               
               <section>
-                <h3 className="font-mono font-semibold text-sm mb-2">2. Frontend Setup</h3>
-                <div className="bg-muted rounded-lg p-3 font-mono text-xs space-y-1">
-                  <p className="text-muted-foreground"># Install dependencies</p>
-                  <p>npm install</p>
-                  <p className="text-muted-foreground mt-2"># Start development server</p>
-                  <p>npm run dev</p>
-                </div>
-              </section>
-              
-              <section>
-                <h3 className="font-mono font-semibold text-sm mb-2">3. Raspberry Pi Setup</h3>
-                <div className="bg-muted rounded-lg p-3 font-mono text-xs space-y-1">
-                  <p className="text-muted-foreground"># Start MJPEG streamer on Pi</p>
-                  <p>mjpg_streamer -i "input_raspicam.so" -o "output_http.so -p 8080"</p>
+                <h3 className="font-mono font-semibold text-sm mb-2">3. Connect via Settings</h3>
+                <div className="bg-muted rounded-lg p-3 text-xs space-y-1">
+                  <p>1. Click <strong>Settings</strong> in the header</p>
+                  <p>2. Enter your Pi's stream URL (e.g., http://10.40.58.225:8080/?action=stream)</p>
+                  <p>3. Enter your Pi's IP address (e.g., 10.40.58.225)</p>
+                  <p>4. Click <strong>Connect</strong></p>
                 </div>
               </section>
             </TabsContent>
